@@ -1447,12 +1447,17 @@ default 'snappy'
             latest supported stable version (1.0.0).
         schema : pyarrow.Schema, default None
             The expected schema of the Parquet file. This can be used to
-            indicate the type of columns if we cannot infer it automatically.
-            If passed, the output will have exactly this schema.
+            indicate the type of columns if we cannot infer it automatically,
+            and to add field and schema metadata.
+            The output has the columns of this schema, in this order.
             Columns specified in the schema that are not found in the DataFrame
             columns or its index will raise an error. Additional columns or
             index levels in the DataFrame which are not specified in the schema
             will be ignored.
+            The fields for geometry columns are optional: their type is always
+            determined by ``geometry_encoding``, so a type specified for them is
+            ignored (their field metadata is kept), and geometry columns that are
+            not included are added after the other fields.
         additional_metadata : dict, default None
             Adds additional metadata to the Parquet file metadata.
             Each value gets JSON-encoded.

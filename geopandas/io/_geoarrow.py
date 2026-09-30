@@ -121,11 +121,17 @@ def geopandas_to_arrow(
         specify the keyword).
     schema : pyarrow.Schema, default None
         The expected schema of the Arrow Table. This can be used to indicate the
-        type of columns if we cannot infer it automatically. If passed, the
-        output will have exactly this schema. Columns specified in the schema
-        that are not found in the DataFrame columns or its index will raise an
-        error. Additional columns or index levels in the DataFrame which are not
-        specified in the schema will be ignored.
+        type of columns if we cannot infer it automatically. The output has
+        the columns of this schema, in this order. Columns specified in the
+        schema that are not found in the DataFrame columns or its index will
+        raise an error. Additional columns or index levels in the DataFrame
+        which are not specified in the schema will be ignored.
+
+        The fields for geometry columns are optional. The type of a geometry
+        field is always determined by ``geometry_encoding``, so any type given
+        for it in the schema is ignored, but its field metadata is kept
+        (merged with the extension metadata added by GeoPandas). Geometry
+        columns not included in the schema are added after the schema's fields.
 
     """
     mask = df.dtypes == "geometry"
@@ -138,6 +144,14 @@ def geopandas_to_arrow(
     # fill the resulting table with the correct geometry fields
     for col in geometry_columns:
         df_attr[col] = None
+
+    user_schema = schema
+    if schema is not None:
+        # The geometry fields are overwritten below, so the user doesn't need to
+        # specify them; add a placeholder for the ones that are missing.
+        for col in geometry_columns:
+            if col not in schema.names:
+                schema = schema.append(pa.field(col, pa.null()))
 
     table = pa.Table.from_pandas(df_attr, preserve_index=index, schema=schema)
 
@@ -153,6 +167,7 @@ def geopandas_to_arrow(
                 crs=df[col].crs,
                 interleaved=interleaved,
             )
+            field = _merge_user_field_metadata(field, user_schema)
             table = table.set_column(table.schema.get_field_index(col), field, geom_arr)
             geometry_encoding_dict[col] = (
                 field.metadata[b"ARROW:extension:name"]
@@ -166,6 +181,7 @@ def geopandas_to_arrow(
             field, wkb_arr = construct_wkb_array(
                 np.asarray(df[col].array), field_name=col, crs=df[col].crs
             )
+            field = _merge_user_field_metadata(field, user_schema)
             table = table.set_column(table.schema.get_field_index(col), field, wkb_arr)
             geometry_encoding_dict[col] = "WKB"
 
@@ -174,6 +190,19 @@ def geopandas_to_arrow(
             f"Expected geometry encoding 'WKB' or 'geoarrow' got {geometry_encoding}"
         )
     return table, geometry_encoding_dict
+
+
+def _merge_user_field_metadata(field, schema):
+    """Add the metadata of the same-named field in ``schema`` to ``field``.
+
+    The metadata added by GeoPandas (the Arrow extension metadata) takes precedence.
+    """
+    if schema is None or field.name not in schema.names:
+        return field
+    user_metadata = schema.field(field.name).metadata
+    if not user_metadata:
+        return field
+    return field.with_metadata({**user_metadata, **(field.metadata or {})})
 
 
 def construct_wkb_array(
