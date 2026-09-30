@@ -768,6 +768,30 @@ def test_schema_incompatible_type(tmp_path):
         gdf.to_parquet(tmp_path / "test.parquet", schema=schema)
 
 
+def test_schema_column_order(tmp_path):
+    # the order of the columns is the one of the schema, not of the dataframe
+    # (and the position of the geometry column differs between the two)
+    schema = pa.schema(
+        [
+            pa.field("geometry", pa.binary()),
+            pa.field("b", pa.int8()),
+            pa.field("a", pa.string()),
+        ]
+    )
+    gdf = geopandas.GeoDataFrame(
+        {"a": ["x"], "geometry": [box(0, 0, 1, 1)], "b": [1]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(path, schema=schema)
+
+    assert pq.read_schema(path).names == ["geometry", "b", "a"]
+    result = read_parquet(path)
+    assert result.geometry.name == "geometry"
+    assert_geoseries_equal(result.geometry, gdf.geometry)
+    assert result["a"].tolist() == ["x"]
+    assert result["b"].tolist() == [1]
+
+
 def test_fsspec_url(naturalearth_lowres):
     _ = pytest.importorskip("fsspec")
     import fsspec.implementations.memory
