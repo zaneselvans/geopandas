@@ -5,7 +5,10 @@
 New features and improvements:
 - `GeoDataFrame.to_parquet` and `read_parquet` will now write and read pandas `attrs` 
   respectively (#3597)
-- Add `schema` and `additional_metadata` parameters to `to_parquet` (#3631).
+- Add `schema` and `additional_metadata` parameters to `to_parquet` and `to_feather`
+  to set the data types and the field and schema metadata of the file. The fields of
+  geometry columns are optional in the schema, and a `geo` key in its metadata is
+  written as is (#3631).
 
 
 Deprecations and compatibility notes:
