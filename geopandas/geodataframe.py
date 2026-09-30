@@ -1402,7 +1402,7 @@ properties': {'col1': 'name1'}, 'geometry': {'type': 'Point', 'coordinates': (1.
         write_covering_bbox: bool = False,
         schema_version: SUPPORTED_VERSIONS_LITERAL | None = None,
         schema: pa.Schema | None = None,
-        additional_metadata: dict = {},
+        additional_metadata: dict | None = None,
         **kwargs,
     ) -> None:
         """Write a GeoDataFrame to the Parquet format.
@@ -1453,7 +1453,7 @@ default 'snappy'
             columns or its index will raise an error. Additional columns or
             index levels in the DataFrame which are not specified in the schema
             will be ignored.
-        additional_metadata : dict, default {}
+        additional_metadata : dict, default None
             Adds additional metadata to the Parquet file metadata.
             Each value gets JSON-encoded.
             May override metadata that is provided through the 'schema' parameter,

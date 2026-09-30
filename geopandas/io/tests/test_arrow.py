@@ -353,7 +353,7 @@ def test_to_parquet_does_not_pass_engine_along(mock_to_parquet):
         schema_version=None,
         write_covering_bbox=False,
         schema=None,
-        additional_metadata={},
+        additional_metadata=None,
     )
 
 
@@ -708,7 +708,7 @@ def test_additional_metadata(tmp_path, value):
     assert metadata == value
 
 
-@pytest.mark.parametrize("int_type", [pa.int8(), pa.uint16(), pa.int64()])
+@pytest.mark.parametrize("int_type", [pa.int8(), pa.uint16(), pa.int64(), pa.float64()])
 def test_set_schema(tmp_path, int_type):
     geoField = pa.field("geometry", pa.binary())
     intField = pa.field("i", int_type)
@@ -758,6 +758,14 @@ def test_schema_and_metadata(tmp_path):
     assert foo2 == "bar2"
     geo = json.loads(table.schema.metadata[b"geo"])
     assert geo is not None
+
+
+def test_schema_incompatible_type(tmp_path):
+    # the error of casting to the schema is raised as is by pyarrow
+    schema = pa.schema([pa.field("i", pa.list_(pa.int8()))])
+    gdf = geopandas.GeoDataFrame({"i": [1], "geometry": [box(0, 0, 1, 1)]})
+    with pytest.raises(pa.ArrowException):
+        gdf.to_parquet(tmp_path / "test.parquet", schema=schema)
 
 
 def test_fsspec_url(naturalearth_lowres):

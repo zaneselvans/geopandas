@@ -335,7 +335,7 @@ def _geopandas_to_arrow(
     schema_version=None,
     write_covering_bbox=None,
     schema=None,
-    additional_metadata={},
+    additional_metadata=None,
 ):
     """Convert a GeoDataFrame to a pyarrow Table.
 
@@ -383,6 +383,8 @@ def _geopandas_to_arrow(
     # Store geopandas specific file-level metadata
     # This must be done AFTER creating the table or it is not persisted
     metadata = table.schema.metadata
+    if additional_metadata is None:
+        additional_metadata = {}
     for key, value in additional_metadata.items():
         metadata[key.encode()] = _encode_metadata(value)
     metadata.update({b"geo": _encode_metadata(geo_metadata)})
@@ -404,7 +406,7 @@ def _to_parquet(
     schema_version=None,
     write_covering_bbox=False,
     schema=None,
-    additional_metadata={},
+    additional_metadata=None,
     **kwargs,
 ):
     """
@@ -450,7 +452,7 @@ def _to_parquet(
         columns or its index will raise an error. Additional columns or
         index levels in the DataFrame which are not specified in the schema
         will be ignored.
-    additional_metadata : dict, default {}
+    additional_metadata : dict, default None
         Adds additional metadata to the Parquet file metadata.
         Each value gets JSON-encoded.
         May override metadata that is provided through the 'schema' parameter,
