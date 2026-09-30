@@ -489,7 +489,16 @@ def _to_parquet(
     parquet.write_table(table, path, compression=compression, **kwargs)
 
 
-def _to_feather(df, path, index=None, compression=None, schema_version=None, **kwargs):
+def _to_feather(
+    df,
+    path,
+    index=None,
+    compression=None,
+    schema_version=None,
+    schema=None,
+    additional_metadata=None,
+    **kwargs,
+):
     """
     Write a GeoDataFrame to the Feather format.
 
@@ -518,6 +527,14 @@ def _to_feather(df, path, index=None, compression=None, schema_version=None, **k
     schema_version : {'0.1.0', '0.4.0', '1.0.0', '1.1.0', None}
         GeoParquet specification version for the metadata; if not provided
         will default to latest supported version.
+    schema : pyarrow.Schema, default None
+        The expected schema of the Feather file. See :meth:`GeoDataFrame.to_parquet`
+        for how the schema is applied, including for geometry columns.
+    additional_metadata : dict, default None
+        Adds additional metadata to the Feather file metadata.
+        Each value gets JSON-encoded.
+        May override metadata that is provided through the 'schema' parameter,
+        but 'geo' metadata is never overwritten.
     kwargs
         Additional keyword arguments passed to pyarrow.feather.write_feather().
     """
@@ -526,7 +543,13 @@ def _to_feather(df, path, index=None, compression=None, schema_version=None, **k
     )
 
     path = _expand_user(path)
-    table = _geopandas_to_arrow(df, index=index, schema_version=schema_version)
+    table = _geopandas_to_arrow(
+        df,
+        index=index,
+        schema_version=schema_version,
+        schema=schema,
+        additional_metadata=additional_metadata,
+    )
     feather.write_feather(table, path, compression=compression, **kwargs)
 
 

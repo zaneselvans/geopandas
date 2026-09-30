@@ -871,6 +871,27 @@ def test_schema_geo_metadata_override(tmp_path):
     assert json.loads(metadata[b"extra"]) == 1
 
 
+def test_schema_feather(tmp_path):
+    schema = pa.schema(
+        [pa.field("i", pa.int8(), metadata={"description": "an integer"})],
+        metadata={"license": "CC0"},
+    )
+    gdf = geopandas.GeoDataFrame(
+        {"geometry": [box(0, 0, 1, 1)], "i": [1]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.feather"
+    gdf.to_feather(path, schema=schema, additional_metadata={"extra": {"a": 1}})
+
+    result_schema = feather.read_table(path).schema
+    assert result_schema.names == ["i", "geometry"]
+    assert result_schema.field("i").type == pa.int8()
+    assert result_schema.field("i").metadata[b"description"] == b"an integer"
+    assert result_schema.metadata[b"license"] == b"CC0"
+    assert json.loads(result_schema.metadata[b"extra"]) == {"a": 1}
+    result = read_feather(path)
+    assert_geoseries_equal(result.geometry, gdf.geometry)
+
+
 def test_fsspec_url(naturalearth_lowres):
     _ = pytest.importorskip("fsspec")
     import fsspec.implementations.memory

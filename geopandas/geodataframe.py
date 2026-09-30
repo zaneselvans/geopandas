@@ -1509,6 +1509,8 @@ default 'snappy'
         index: bool | None = None,
         compression: str | None = None,
         schema_version: SUPPORTED_VERSIONS_LITERAL | None = None,
+        schema: pa.Schema | None = None,
+        additional_metadata: dict | None = None,
         **kwargs,
     ):
         """Write a GeoDataFrame to the Feather format.
@@ -1534,6 +1536,14 @@ default 'snappy'
         schema_version : {'0.1.0', '0.4.0', '1.0.0', '1.1.0' None}
             GeoParquet specification version; if not provided will default to
             latest supported stable version (1.0.0).
+        schema : pyarrow.Schema, default None
+            The expected schema of the Feather file. See :meth:`to_parquet` for
+            how the schema is applied, including for geometry columns.
+        additional_metadata : dict, default None
+            Adds additional metadata to the Feather file metadata.
+            Each value gets JSON-encoded.
+            May override metadata that is provided through the 'schema' parameter,
+            but never the 'geo' metadata.
         kwargs
             Additional keyword arguments passed to
             :func:`pyarrow.feather.write_feather`.
@@ -1555,6 +1565,8 @@ default 'snappy'
             index=index,
             compression=compression,
             schema_version=schema_version,
+            schema=schema,
+            additional_metadata=additional_metadata,
             **kwargs,
         )
 
