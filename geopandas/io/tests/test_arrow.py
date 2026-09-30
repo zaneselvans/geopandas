@@ -851,6 +851,26 @@ def test_schema_field_and_schema_metadata(tmp_path):
     assert_geoseries_equal(read_parquet(path).geometry, gdf.geometry)
 
 
+def test_schema_geo_metadata_override(tmp_path):
+    # a "geo" key in the schema metadata is written as is, and can't be changed
+    # by additional_metadata
+    geo = json.dumps({"primary_column": "geometry", "custom": True})
+    schema = pa.schema([pa.field("i", pa.int8())], metadata={"geo": geo})
+    gdf = geopandas.GeoDataFrame(
+        {"i": [1], "geometry": [box(0, 0, 1, 1)]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(
+        path,
+        schema=schema,
+        additional_metadata={"geo": "ignored", "extra": 1},
+    )
+
+    metadata = pq.read_schema(path).metadata
+    assert metadata[b"geo"] == geo.encode()
+    assert json.loads(metadata[b"extra"]) == 1
+
+
 def test_fsspec_url(naturalearth_lowres):
     _ = pytest.importorskip("fsspec")
     import fsspec.implementations.memory
