@@ -46,6 +46,7 @@ DATA_PATH = pathlib.Path(os.path.dirname(__file__)) / "data"
 # Skip all tests in this module if pyarrow is not available
 pyarrow = pytest.importorskip("pyarrow")
 
+import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from pyarrow import feather
@@ -365,6 +366,8 @@ def test_to_parquet_does_not_pass_engine_along(mock_to_parquet):
         index=None,
         schema_version=None,
         write_covering_bbox=False,
+        schema=None,
+        additional_metadata=None,
     )
 
 
@@ -735,6 +738,202 @@ def test_default_geo_col_writes(tmp_path):
     # cannot be round tripped as gdf due to invalid geom col
     pq_df = pd_read_parquet(tmp_path / "test.pq")
     assert_frame_equal(df, pq_df)
+
+
+@pytest.mark.parametrize("value", ["test", 123.45, {"a": "b"}])
+def test_additional_metadata(tmp_path, value):
+    df = GeoDataFrame()
+    df.to_parquet(tmp_path / "test.parquet", additional_metadata={"extra": value})
+
+    from pyarrow.parquet import read_table
+
+    table = read_table(tmp_path / "test.parquet")
+    metadata = json.loads(table.schema.metadata[b"extra"])
+    assert metadata == value
+
+
+@pytest.mark.parametrize("int_type", [pa.int8(), pa.uint16(), pa.int64(), pa.float64()])
+def test_set_schema(tmp_path, int_type):
+    geoField = pa.field("geometry", pa.binary())
+    intField = pa.field("i", int_type)
+    schema = pa.schema([geoField, intField])
+    gdf = geopandas.GeoDataFrame({"geometry": [box(0, 0, 10, 10)], "i": [1]})
+    gdf.to_parquet(tmp_path / "test.parquet", schema=schema)
+
+    from pyarrow.parquet import read_table
+
+    table = read_table(tmp_path / "test.parquet")
+    assert table.schema.field("geometry") == geoField
+    assert table.schema.field("i") == intField
+
+
+def test_schema_and_metadata(tmp_path):
+    intField = pa.field("i", pa.int8())
+    schema = pa.schema([intField])
+    schema = schema.with_metadata(
+        {
+            "foo": json.dumps("bar").encode("utf-8"),
+            "extra": json.dumps(1).encode("utf-8"),
+        }
+    )
+    gdf = geopandas.GeoDataFrame({"i": [1]})
+    gdf.to_parquet(
+        tmp_path / "test.parquet",
+        schema=schema,
+        additional_metadata={
+            # extra is overridden here
+            "extra": 2,
+            # add an additional property
+            "foo2": "bar2",
+            # ensure geo metadata is ignored
+            "geo": None,
+        },
+    )
+
+    from pyarrow.parquet import read_table
+
+    table = read_table(tmp_path / "test.parquet")
+    assert table.schema.field("i") == intField
+    extra = json.loads(table.schema.metadata[b"extra"])
+    assert extra == 2
+    foo = json.loads(table.schema.metadata[b"foo"])
+    assert foo == "bar"
+    foo2 = json.loads(table.schema.metadata[b"foo2"])
+    assert foo2 == "bar2"
+    geo = json.loads(table.schema.metadata[b"geo"])
+    assert geo is not None
+
+
+def test_schema_incompatible_type(tmp_path):
+    # the error of casting to the schema is raised as is by pyarrow
+    schema = pa.schema([pa.field("i", pa.list_(pa.int8()))])
+    gdf = geopandas.GeoDataFrame({"i": [1], "geometry": [box(0, 0, 1, 1)]})
+    with pytest.raises(pa.ArrowException):
+        gdf.to_parquet(tmp_path / "test.parquet", schema=schema)
+
+
+def test_schema_column_order(tmp_path):
+    # the order of the columns is the one of the schema, not of the dataframe
+    # (and the position of the geometry column differs between the two)
+    schema = pa.schema(
+        [
+            pa.field("geometry", pa.binary()),
+            pa.field("b", pa.int8()),
+            pa.field("a", pa.string()),
+        ]
+    )
+    gdf = geopandas.GeoDataFrame(
+        {"a": ["x"], "geometry": [box(0, 0, 1, 1)], "b": [1]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(path, schema=schema)
+
+    assert pq.read_schema(path).names == ["geometry", "b", "a"]
+    result = read_parquet(path)
+    assert result.geometry.name == "geometry"
+    assert_geoseries_equal(result.geometry, gdf.geometry)
+    assert result["a"].tolist() == ["x"]
+    assert result["b"].tolist() == [1]
+
+
+def test_schema_without_geometry_field(tmp_path):
+    # the geometry field is optional in the schema, it is added after the others
+    schema = pa.schema([pa.field("i", pa.int8())])
+    gdf = geopandas.GeoDataFrame(
+        {"geometry": [box(0, 0, 1, 1), None], "i": [1, 2]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(path, schema=schema)
+
+    assert pq.read_schema(path).names == ["i", "geometry"]
+    result = read_parquet(path)
+    assert result["i"].dtype == np.int8
+    assert result.crs == gdf.crs
+    assert_geoseries_equal(result.geometry, gdf.geometry)
+
+
+@pytest.mark.parametrize("geometry_encoding", ["WKB", "geoarrow"])
+def test_schema_geometry_type_is_ignored(tmp_path, geometry_encoding):
+    # the type of the geometry field is determined by the geometry encoding
+    schema = pa.schema(
+        [
+            pa.field("geometry", pa.string(), metadata={"foo": "bar"}),
+            pa.field("i", pa.int8()),
+        ]
+    )
+    gdf = geopandas.GeoDataFrame({"geometry": [Point(0, 1)], "i": [1]}, crs="EPSG:4326")
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(path, schema=schema, geometry_encoding=geometry_encoding)
+
+    field = pq.read_schema(path).field("geometry")
+    assert field.type != pa.string()
+    # the field metadata is kept
+    assert field.metadata[b"foo"] == b"bar"
+    assert_geoseries_equal(read_parquet(path).geometry, gdf.geometry)
+
+
+def test_schema_field_and_schema_metadata(tmp_path):
+    schema = pa.schema(
+        [
+            pa.field("i", pa.int64(), metadata={"description": "an integer"}),
+            pa.field("geometry", pa.binary(), metadata={"description": "a shape"}),
+        ],
+        metadata={"license": "CC0"},
+    )
+    gdf = geopandas.GeoDataFrame(
+        {"i": [1], "geometry": [box(0, 0, 1, 1)]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(path, schema=schema)
+
+    result = pq.read_schema(path)
+    assert result.field("i").metadata[b"description"] == b"an integer"
+    assert result.field("geometry").metadata[b"description"] == b"a shape"
+    assert result.metadata[b"license"] == b"CC0"
+    # geo metadata is generated by GeoPandas
+    assert json.loads(result.metadata[b"geo"])["primary_column"] == "geometry"
+    assert_geoseries_equal(read_parquet(path).geometry, gdf.geometry)
+
+
+def test_schema_geo_metadata_override(tmp_path):
+    # a "geo" key in the schema metadata is written as is, and can't be changed
+    # by additional_metadata
+    geo = json.dumps({"primary_column": "geometry", "custom": True})
+    schema = pa.schema([pa.field("i", pa.int8())], metadata={"geo": geo})
+    gdf = geopandas.GeoDataFrame(
+        {"i": [1], "geometry": [box(0, 0, 1, 1)]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.parquet"
+    gdf.to_parquet(
+        path,
+        schema=schema,
+        additional_metadata={"geo": "ignored", "extra": 1},
+    )
+
+    metadata = pq.read_schema(path).metadata
+    assert metadata[b"geo"] == geo.encode()
+    assert json.loads(metadata[b"extra"]) == 1
+
+
+def test_schema_feather(tmp_path):
+    schema = pa.schema(
+        [pa.field("i", pa.int8(), metadata={"description": "an integer"})],
+        metadata={"license": "CC0"},
+    )
+    gdf = geopandas.GeoDataFrame(
+        {"geometry": [box(0, 0, 1, 1)], "i": [1]}, crs="EPSG:4326"
+    )
+    path = tmp_path / "test.feather"
+    gdf.to_feather(path, schema=schema, additional_metadata={"extra": {"a": 1}})
+
+    result_schema = feather.read_table(path).schema
+    assert result_schema.names == ["i", "geometry"]
+    assert result_schema.field("i").type == pa.int8()
+    assert result_schema.field("i").metadata[b"description"] == b"an integer"
+    assert result_schema.metadata[b"license"] == b"CC0"
+    assert json.loads(result_schema.metadata[b"extra"]) == {"a": 1}
+    result = read_feather(path)
+    assert_geoseries_equal(result.geometry, gdf.geometry)
 
 
 def test_fsspec_url(naturalearth_lowres):
