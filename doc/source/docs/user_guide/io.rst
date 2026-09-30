@@ -38,7 +38,7 @@ the ``layer`` keyword::
     countries_gdf = geopandas.read_file("package.gpkg", layer='countries')
 
 If you have a file with multiple layers, you can list them using
-:func:`geopandas.list_layers`. Note that this function requires Pyogrio.
+:func:`geopandas.list_layers`. To read properties of each layer (including layer metadata), you can use :func:`geopandas.read_file_info`. Note that these functions requires Pyogrio.
 
 GeoPandas can also load resources directly from
 a web URL, for example for GeoJSON files from `geojson.xyz <http://geojson.xyz/>`_::
@@ -170,6 +170,22 @@ Skip loading geometry from the file:
         ignore_geometry=True,
     )
 
+
+Accessing the feature ID (fid)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Some formats (e.g. GeoPackage) store a feature ID (``fid``) per feature that is
+not included in the GeoDataFrame's columns by default. Pass ``fid_as_index=True``
+to use it as the GeoDataFrame's index instead of the default integer index:
+
+.. note:: Requires the pyogrio engine.
+
+.. code-block:: python
+
+    gdf = geopandas.read_file(
+        geodatasets.get_path("spdata.columbus"),
+        fid_as_index=True,
+    )
 
 SQL WHERE filter
 ^^^^^^^^^^^^^^^^

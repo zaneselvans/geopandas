@@ -75,7 +75,7 @@ autodoc_typehints = "none"
 
 
 def setup(app):
-    app.add_css_file("custom.css")  # may also be an URL
+    app.add_css_file("custom.css")  # may also be a URL
 
 
 # Add any paths that contain templates here, relative to this directory.
@@ -397,8 +397,8 @@ intersphinx_mapping = {
         "https://geopy.readthedocs.io/en/stable/objects.inv",
     ),
     "libpysal": (
-        "https://pysal.org/libpysal/",
-        "https://pysal.org/libpysal/objects.inv",
+        "https://pysal.org/libpysal/stable/",
+        "https://pysal.org/libpysal/stable/objects.inv",
     ),
     "mapclassify": (
         "https://pysal.org/mapclassify/",
